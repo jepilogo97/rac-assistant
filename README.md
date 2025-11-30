@@ -13,15 +13,14 @@
 
 ## 👥 Integrantes del Proyecto
 
-**Integrantes del Proyecto:**\
-**Jean Pierre Londoño** -- https://github.com/jepilogo97
-**Julio Morales** -- https://github.com/
-**Jonathan Pacheco** -- https://github.com/
-**Joshua Triana** -- https://github.com/
-**Javier Yela** -- https://github.com/
-
-**Instructor:**\
-\[Jose Armando Ordoñez\] -- https://github.com/
+| Rol | Nombre | GitHub |
+|-----|--------|--------|
+| Integrante | Jean Pierre Londoño | https://github.com/jepilogo97 |
+| Integrante | Julio Morales | https://github.com/ |
+| Integrante | Jonathan Pacheco | https://github.com/ |
+| Integrante | Joshua Triana | https://github.com/ |
+| Integrante | Javier Yela | https://github.com/ |
+| **Instructor** | **Jose Armando Ordoñez** | https://github.com/ |
 
 ------------------------------------------------------------------------
 
@@ -196,5 +195,6 @@ MIT License
 ## 📌 Citación
 
 Londoño, J. - Morales, J. - Pacheco, J. - Triana, J.- Yela, J. (2025). Agente Inteligente Automatizado para la Mejora Continua de Procesos. Universidad Icesi.
+
 
 
