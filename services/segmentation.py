@@ -7,7 +7,6 @@ Basado en metodologías Lean, Six Sigma, Kaizen y SCAMPER
 
 import pandas as pd
 import json
-import streamlit as st
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 import google.generativeai as genai
@@ -125,7 +124,7 @@ def create_subactivities_prompt(proceso_general: str, proceso_as_is: str) -> str
         """Prompt de segmentación Lean Six Sigma."""
         if not proceso_as_is or proceso_as_is.isspace():
                 raise ValueError("La descripción del proceso As-Is no puede estar vacía")
-        return f"""Eres un analista experto en Lean Six Sigma. Descompón el proceso As-Is en subactividades atómicas sin inventar información.
+        return f"""Eres un analista Lean Six Sigma. Clasifica y enriquece las actividades del proceso.
 
 Proceso: {proceso_general}
 AsIs:
@@ -133,45 +132,108 @@ AsIs:
 {proceso_as_is}
 <<FIN>>
 
-REGLAS:
-- Subactividad = verbo + objeto + propósito.
-- No repetir texto del As-Is. No agregar elementos no mencionados o no inferibles.
-- 4 a 25 subactividades (si aplica).
-- Mantener secuencia. Dependencias: null o id previo.
-- automatizable: Si / No / Posible.
-- Si automatizable ≠ "No", agregar sugerencia_automatizacion (breve, realista, sin nombres de software).
-- tiempos en minutos: estimación razonable; tiempo_total = tiempo_promedio.
-- No agregar texto fuera del JSON. No markdown. No notas explicativas.
-- Si no sabes algo, usa valor conservador o "No aplica".
+🚫 REGLAS DE SUBDIVISIÓN (CRÍTICAS - CUMPLIMIENTO OBLIGATORIO):
 
-CLASIFICACIÓN DE ACTIVIDADES (MANDATORIO - Basado en Lean, Six Sigma, Kaizen):
-Cada subactividad DEBE clasificarse en UNA de estas 3 categorías. NO existe la opción "Indeterminado".
+1. **REGLA PRINCIPAL**: Por DEFECTO, NO dividas actividades. Mantén 1:1
+2. **EXCEPCIÓN ÚNICA**: Solo divide si la actividad es EXTREMADAMENTE compleja y contiene claramente 2 tareas distintas
+3. **LÍMITE ABSOLUTO**: NUNCA dividas en más de 2 subactividades
+4. **OBJETIVO**: Mínimo 80% de actividades deben mantenerse 1:1 (sin dividir)
 
-1. **OPERATIVA** (Do/Execute) - Acciones de ejecución, transformación o movimiento.
-2. **ANALÍTICA** (Measure/Analyze) - Procesamiento cuantitativo y medición.
-3. **COGNITIVA** (Think/Decide) - Juicio profesional y toma de decisiones.
+📊 CONTEO ESPERADO (VERIFICACIÓN OBLIGATORIA):
+- Cuenta actividades en As-Is = N
+- Tu respuesta DEBE tener: Entre N y N+3 actividades (MÁXIMO)
+- Ejemplo: As-Is con 14 actividades → Respuesta: 14-17 actividades ✅
+- Si As-Is tiene 14 actividades y respondes con 50 → ❌ INCORRECTO
 
-SALIDA JSON EXACTA:
+⏱️ REGLA DE TIEMPOS (CRÍTICA - VERIFICACIÓN MATEMÁTICA OBLIGATORIA):
 
+**ANTES de generar el JSON, DEBES:**
+1. Sumar TODOS los tiempos que vas a asignar
+2. Verificar que la suma EXACTA = suma de tiempos originales
+3. Si divides una actividad de 60 min en 2:
+   - Opción A: 30 + 30 = 60 ✅
+   - Opción B: 40 + 20 = 60 ✅
+   - NUNCA: 40 + 40 = 80 ❌ (esto DUPLICA el tiempo)
+
+**FÓRMULA DE VERIFICACIÓN:**
+```
+Suma(tiempos_originales) = Suma(tiempos_nuevos)
+```
+
+**DISTRIBUCIÓN DE TIEMPOS AL DIVIDIR:**
+- Si divides una actividad, distribuye el tiempo proporcionalmente
+- Ejemplo: Actividad de 100 min dividida en 2 tareas:
+  * Si tarea 1 es 70% del trabajo → 70 min
+  * Si tarea 2 es 30% del trabajo → 30 min
+  * Total: 70 + 30 = 100 ✅
+
+CLASIFICACIÓN LEAN (OBLIGATORIA):
+- VA: Transforma producto/servicio, cliente pagaría
+- NVA-N: No agrega valor pero necesario (regulación)
+- NVA: Desperdicio (Sobreproducción, Espera, Transporte, Sobreprocesamiento, Inventario, Movimiento, Defectos, Talento)
+
+TIPO DE ACTIVIDAD:
+- Operativa: Hacer, ejecutar, mover
+- Analítica: Medir, calcular, datos
+- Cognitiva: Decidir, revisar, aprobar
+
+CAMPOS OBLIGATORIOS:
+- id: número secuencial
+- nombre: descriptivo
+- descripcion, objetivo
+- responsable: cargo del As-Is
+- tipo_actividad: Operativa|Analítica|Cognitiva
+- clasificacion_lean: VA|NVA-N|NVA
+- tipo_desperdicio: si NVA, especificar tipo
+- justificacion: por qué esa clasificación
+- dependencias: null o id previo
+- tiempo_promedio_min, tiempo_estimado_total_min
+- automatizable: Si|No|Posible
+- sugerencia_automatizacion: si != No
+- actividad_original_id: número de actividad original (1 a N)
+
+JSON:
 {{
     "proceso": "{proceso_general}",
-    "numero_subactividades": <int>,
+    "numero_subactividades": <entre N y N+5>,
     "subactividades": [
         {{
-            "id": <int>,
-            "nombre": "<str>",
-            "descripcion": "<str>",
-            "objetivo": "<str>",
-            "tipo_actividad": "<Operativa|Analítica|Cognitiva>",
-            "dependencias": <int|null>,
-            "tiempo_promedio_min": <int>,
-            "tiempo_estimado_total_min": <int>,
-            "automatizable": "<Si|No|Posible>",
-            "sugerencia_automatizacion": "<str|null>"
+            "id": 1,
+            "nombre": "nombre actividad",
+            "descripcion": "...",
+            "objetivo": "...",
+            "responsable": "cargo",
+            "tipo_actividad": "Operativa|Analítica|Cognitiva",
+            "clasificacion_lean": "VA|NVA-N|NVA",
+            "tipo_desperdicio": "tipo o null",
+            "justificacion": "razón",
+            "dependencias": null,
+            "tiempo_promedio_min": 10,
+            "tiempo_estimado_total_min": 10,
+            "automatizable": "Si|No|Posible",
+            "sugerencia_automatizacion": "cómo o null",
+            "actividad_original_id": 1
         }}
     ]
 }}
+
+VERIFICACIÓN FINAL OBLIGATORIA:
+1. Contar actividades As-Is = N
+2. Contar actividades en tu respuesta = M
+3. Verificar: N ≤ M ≤ N+3 ✅
+4. Sumar tiempo_promedio_min de todas las subactividades
+5. Verificar que suma = tiempo total original ✅
+6. Si alguna verificación falla → CORREGIR antes de responder
 """
+
+
+
+
+
+
+
+
+
 
 
 def create_subactivities_prompt_page(proceso_general: str, proceso_as_is: str, start: int = 0, page_size: int = 5) -> str:
@@ -206,7 +268,7 @@ def create_subactivities_prompt_page(proceso_general: str, proceso_as_is: str, s
 
 def _normalize_subactivities(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Normaliza subactividades."""
-    allowed = {"id","nombre","descripcion","objetivo","tipo_actividad","dependencias","tiempo_promedio_min","tiempo_estimado_total_min","automatizable","sugerencia_automatizacion"}
+    allowed = {"id","nombre","descripcion","objetivo","tipo_actividad","dependencias","tiempo_promedio_min","tiempo_estimado_total_min","automatizable","sugerencia_automatizacion", "actividad_original_id"}
     cleaned: List[Dict[str, Any]] = []
     next_id = 1
     for r in (records or []):
@@ -238,6 +300,42 @@ def _normalize_subactivities(records: List[Dict[str, Any]]) -> List[Dict[str, An
             c[k] = v
         cleaned.append(c)
     return cleaned
+
+
+def export_segmentation_report(df_segmented: pd.DataFrame) -> bytes:
+    """
+    Exportar reporte de segmentación a Excel
+    """
+    from io import BytesIO
+    output = BytesIO()
+    
+    # Ensure all columns exist
+    columns_order = [
+        'id', 'Actividad', 'Descripción', 'Cargo que ejecuta la tarea', 
+        'Clasificación Lean', 'Tipo Desperdicio', 'Justificación', 
+        'Tiempo Estándar', 'tipo_actividad', 'automatizable', 'sugerencia_automatizacion'
+    ]
+    
+    # Map internal names to display names if needed or ensure columns exist
+    # This is a basic mapping, might need adjustment based on exact DF structure
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_segmented.to_excel(writer, sheet_name='Segmentación', index=False)
+        
+        # Adjust column widths
+        worksheet = writer.sheets['Segmentación']
+        for idx, col in enumerate(df_segmented.columns):
+            max_len = max(
+                df_segmented[col].astype(str).map(len).max(),
+                len(str(col))
+            ) + 2
+            # Cap max width
+            if max_len > 50:
+                max_len = 50
+            worksheet.column_dimensions[chr(65 + idx)].width = max_len
+            
+    return output.getvalue()
+
 
 def _coerce_subactivities_min_schema(result: Dict[str, Any]) -> Dict[str, Any]:
     """Intenta salvar respuestas parciales llenando campos faltantes con valores por defecto."""
@@ -321,15 +419,18 @@ def segment_process(proceso_general: str, proceso_as_is: str, api_key: str, batc
     Generar subactividades del proceso usando Gemini
     """
     if not initialize_gemini(api_key):
-        st.error("No se pudo inicializar Gemini")
+        print("No se pudo inicializar Gemini")
         return pd.DataFrame()
 
     prompt = create_subactivities_prompt(proceso_general, proceso_as_is)
     max_retries = 3
     base_delay = 1
     
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    current_model_index = 0
+    
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name=models_to_try[current_model_index],
         generation_config={
             "temperature": 0.10,
             "max_output_tokens": 2048,
@@ -341,7 +442,13 @@ def segment_process(proceso_general: str, proceso_as_is: str, api_key: str, batc
 
     end_of_data = False
     for page in range(max_pages):
-        cache_key = f"{proceso_general[:40]}|{start}|{page_size}"
+        # Create a hash of the content to ensure cache uniqueness
+        try:
+            content_hash = hashlib.md5(str(proceso_as_is).encode('utf-8', errors='ignore')).hexdigest()
+        except Exception:
+            content_hash = "no_hash"
+            
+        cache_key = f"{proceso_general[:40]}|{content_hash}|{start}|{page_size}"
         if use_cache and cache_key in _segment_page_cache:
             subacts_page = _segment_page_cache[cache_key]
             all_subacts.extend(subacts_page)
@@ -405,14 +512,24 @@ def segment_process(proceso_general: str, proceso_as_is: str, api_key: str, batc
                         wait = base_delay * (2 ** (attempt - 1))
                         time.sleep(wait)
                         continue
+                    # If we failed with the current model, try switching models if available
+                    if current_model_index < len(models_to_try) - 1:
+                        print(f"⚠️ Switching model from {models_to_try[current_model_index]} to {models_to_try[current_model_index + 1]}")
+                        current_model_index += 1
+                        model = genai.GenerativeModel(
+                            model_name=models_to_try[current_model_index],
+                            generation_config={
+                                "temperature": 0.10,
+                                "max_output_tokens": 2048,
+                            },
+                        )
+                        # Retry with new model immediately
+                        continue
+                        
                     end_of_data = True
                     break
 
                 if result is None:
-                    if attempt < max_retries:
-                        wait = base_delay * (2 ** (attempt - 1))
-                        time.sleep(wait)
-                        continue
                     end_of_data = True
                     break
 
@@ -440,11 +557,31 @@ def segment_process(proceso_general: str, proceso_as_is: str, api_key: str, batc
 
             except Exception as e:
                 msg = str(e)
+                print(f"Error generating content: {msg}")
+                
+                # If it's a model not found or similar error, switch model
+                if ("404" in msg or "not found" in msg.lower() or "model" in msg.lower()) and current_model_index < len(models_to_try) - 1:
+                     print(f"⚠️ Switching model from {models_to_try[current_model_index]} to {models_to_try[current_model_index + 1]}")
+                     current_model_index += 1
+                     model = genai.GenerativeModel(
+                        model_name=models_to_try[current_model_index],
+                        generation_config={
+                            "temperature": 0.10,
+                            "max_output_tokens": 2048,
+                        },
+                    )
+                     continue
+
                 if "quota" in msg.lower() or "429" in msg or "exceeded" in msg.lower():
                     if attempt < max_retries:
                         wait = base_delay * (2 ** (attempt - 1))
                         time.sleep(wait)
                         continue
+                
+                # If we are out of retries and have no subacts, re-raise to be caught by caller
+                if attempt == max_retries and not all_subacts:
+                    raise e
+                
                 return pd.DataFrame()
 
         if end_of_data:

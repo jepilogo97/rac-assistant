@@ -5,7 +5,7 @@ Integrado con la estructura de RAC Assistant
 
 import json
 import pandas as pd
-import streamlit as st
+
 from typing import List, Dict, Any, Optional
 import google.generativeai as genai
 from datetime import datetime
@@ -21,7 +21,7 @@ def initialize_gemini_validator(api_key: str) -> bool:
         genai.configure(api_key=api_key)
         return True
     except Exception as e:
-        st.error(f"Error configurando Gemini: {str(e)}")
+        print(f"Error configurando Gemini: {str(e)}")
         return False
 
 
@@ -198,11 +198,14 @@ def parse_gemini_response(response_text: str) -> Dict[str, Any]:
         # Limpiar la respuesta
         clean_text = response_text.strip()
         
-        # Remover bloques de código markdown
-        if clean_text.startswith("```json"):
-            clean_text = clean_text.replace("```json", "").replace("```", "").strip()
-        elif clean_text.startswith("```"):
-            clean_text = clean_text.replace("```", "").strip()
+        # Intentar encontrar JSON con regex
+        import re
+        json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+        if json_match:
+            clean_text = json_match.group(0)
+        
+        # Remover bloques de código markdown si persisten
+        clean_text = clean_text.replace("```json", "").replace("```", "").strip()
         
         # Parsear JSON
         result = json.loads(clean_text)
@@ -272,7 +275,7 @@ def apply_time_estimates(
     time_col = column_matches.get("Tiempo Estándar (Min/Tarea)")
     
     if not activity_col or not time_col:
-        st.warning("No se encontraron columnas necesarias para aplicar estimaciones")
+        print("No se encontraron columnas necesarias para aplicar estimaciones")
         return df
     
     # Crear mapa de estimaciones
@@ -307,115 +310,7 @@ def apply_time_estimates(
 # INTERFAZ DE STREAMLIT (INTEGRADA)
 # =============================================================================
 
-def render_validation_results(validation_result: Dict[str, Any]) -> None:
-    """Renderizar resultados de validación en Streamlit"""
-    
-    if not validation_result.get("success"):
-        st.error(f"❌ Error: {validation_result.get('error', 'Error desconocido')}")
-        if "raw_response" in validation_result:
-            with st.expander("🔍 Ver respuesta raw de Gemini"):
-                st.code(validation_result["raw_response"])
-        return
-    
-    # Resumen ejecutivo
-    st.success("✅ Análisis completado exitosamente")
-    
-    summary = validation_result.get("summary", {})
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Actividades", summary.get("total_activities", 0))
-    with col2:
-        st.metric("Con Tiempo", summary.get("activities_with_time", 0))
-    with col3:
-        st.metric("Sin Tiempo", summary.get("activities_without_time", 0))
-    with col4:
-        st.metric("Tiempo Total (min)", summary.get("total_estimated_time", 0))
-    
-    # Validación de proceso
-    validation = validation_result.get("validation", {})
-    
-    st.markdown("### 🔍 Validación del Proceso")
-    
-    if not validation.get("is_valid"):
-        st.warning("⚠️ Se encontraron problemas en el proceso")
-    else:
-        st.success("✅ El proceso tiene una estructura lógica válida")
-    
-    # Problemas detectados
-    issues = validation.get("issues", [])
-    if issues:
-        st.markdown("#### 🔴 Problemas Detectados")
-        
-        # Agrupar por severidad
-        errors = [i for i in issues if i.get("severity") == "error"]
-        warnings = [i for i in issues if i.get("severity") == "warning"]
-        infos = [i for i in issues if i.get("severity") == "info"]
-        
-        if errors:
-            st.error(f"🔴 Errores críticos ({len(errors)})")
-            for issue in errors:
-                with st.expander(f"❌ {issue.get('message', 'Sin mensaje')}"):
-                    st.write(f"**Tipo:** {issue.get('type', 'N/A')}")
-                    st.write(f"**Actividad:** {issue.get('activity_id', 'N/A')}")
-                    st.write(f"**Sugerencia:** {issue.get('suggestion', 'Sin sugerencia')}")
-        
-        if warnings:
-            st.warning(f"🟡 Advertencias ({len(warnings)})")
-            for issue in warnings:
-                with st.expander(f"⚠️ {issue.get('message', 'Sin mensaje')}"):
-                    st.write(f"**Tipo:** {issue.get('type', 'N/A')}")
-                    st.write(f"**Actividad:** {issue.get('activity_id', 'N/A')}")
-                    st.write(f"**Sugerencia:** {issue.get('suggestion', 'Sin sugerencia')}")
-        
-        if infos:
-            for issue in infos:
-                st.info(f"💡 {issue.get('message', 'Sin mensaje')}")
-    
-    # Oportunidades de paralelización
-    parallel_ops = validation.get("parallel_opportunities", [])
-    if parallel_ops:
-        st.markdown("#### ⚡ Oportunidades de Paralelización")
-        
-        for i, opp in enumerate(parallel_ops, 1):
-            st.success(f"**Oportunidad {i}:** {', '.join(opp.get('activities', []))}")
-            st.write(f"💡 {opp.get('reason', 'Sin razón')}")
-            if opp.get("estimated_time_saved"):
-                st.write(f"⏱️ Tiempo ahorrado estimado: **{opp['estimated_time_saved']} min**")
-    
-    # Estimaciones de tiempo
-    estimates = validation_result.get("time_estimates", [])
-    if estimates:
-        st.markdown("#### ⏱️ Estimaciones de Tiempo")
-        
-        estimates_to_apply = [e for e in estimates if e.get("current_time", 0) == 0]
-        
-        if estimates_to_apply:
-            st.write(f"Se encontraron **{len(estimates_to_apply)}** actividades sin tiempo definido")
-            
-            # Crear DataFrame para mostrar
-            est_df = pd.DataFrame([{
-                "Actividad": e.get("activity_name", e.get("activity_id")),
-                "Tiempo Estimado (min)": e.get("estimated_time"),
-                "Confianza": e.get("confidence"),
-                "Razonamiento": e.get("reasoning", "")[:100] + "..."
-            } for e in estimates_to_apply])
-            
-            st.dataframe(est_df, use_container_width=True)
-    
-    # Recomendaciones
-    recommendations = summary.get("recommendations", [])
-    if recommendations:
-        st.markdown("#### 💡 Recomendaciones")
-        
-        for i, rec in enumerate(recommendations, 1):
-            st.info(f"{i}. {rec}")
-    
-    # Grafo de dependencias (si existe)
-    dep_graph = validation.get("dependency_graph", {})
-    if dep_graph.get("edges"):
-        with st.expander("🔗 Ver Grafo de Dependencias"):
-            st.json(dep_graph)
+
 
 
 # =============================================================================
@@ -499,11 +394,8 @@ def validate_and_estimate_process_integrated(
         activities.append(activity)
     
     # Validar con Gemini
-    with st.spinner("🤖 Analizando dependencias y estimando tiempos con Gemini..."):
-        result = validate_dependencies_with_gemini(activities, api_key)
-    
-    # Renderizar resultados
-    # render_validation_results(result)
+    print("🤖 Analizando dependencias y estimando tiempos con Gemini...")
+    result = validate_dependencies_with_gemini(activities, api_key)
     
     # Aplicar estimaciones si se solicita
     df_updated = df
@@ -511,7 +403,7 @@ def validate_and_estimate_process_integrated(
         estimates = result.get("time_estimates", [])
         if estimates:
             df_updated = apply_time_estimates(df, estimates)
-            st.success(f"✅ Se aplicaron {len(estimates)} estimaciones de tiempo")
+            print(f"✅ Se aplicaron {len(estimates)} estimaciones de tiempo")
     
     return df_updated, result
 

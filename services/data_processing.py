@@ -4,7 +4,6 @@ Utilidades para procesamiento y validación de datos (DataFrames)
 
 import pandas as pd
 import re
-import streamlit as st
 from typing import Dict, Any, Optional
 from config import FILE_CONFIG
 
@@ -113,7 +112,7 @@ def convert_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
                 cleaned_col = cleaned_col.str.replace(',', '.')
                 df[col] = pd.to_numeric(cleaned_col, errors='coerce')
             except Exception as e:
-                st.warning(f"⚠️ No se pudo convertir '{col}' a numérico: {str(e)}")
+                print(f"⚠️ No se pudo convertir '{col}' a numérico: {str(e)}")
     
     return df
 

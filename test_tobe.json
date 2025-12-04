@@ -1,0 +1,14 @@
+{
+    "classified_data": null,
+    "segmented_data": [
+        {
+            "id": 1,
+            "nombre": "Test Activity",
+            "descripcion": "Test description",
+            "tiempo_promedio_min": 10,
+            "clasificacion_lean": "VA"
+        }
+    ],
+    "api_key": "test_key",
+    "contexto_proceso": "Proceso de prueba"
+}

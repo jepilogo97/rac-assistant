@@ -199,20 +199,27 @@ def generate_classification_summary(df_classified: pd.DataFrame) -> Dict[str, An
     falta_detalle_count = clasificaciones.get("Falta detalle", 0)
     
     # Tipos de desperdicio
-    tipos_desperdicio = {}
+    waste_distribution = {}
     if "Tipo Desperdicio" in df_classified.columns:
-        tipos_desperdicio = df_classified[
+        waste_distribution = df_classified[
             df_classified["Tipo Desperdicio"].notna()
         ]["Tipo Desperdicio"].value_counts().to_dict()
     
     return {
+        "total_activities": total,
+        "value_added_activities": valor_count,
+        "necessary_non_value": falta_detalle_count,
+        "waste_activities": desperdicio_count,
+        "waste_percentage": (desperdicio_count / total * 100) if total > 0 else 0,
+        "waste_distribution": waste_distribution,
+        # Legacy fields for backward compatibility
         "total_actividades": total,
         "valor": valor_count,
         "desperdicio": desperdicio_count,
         "falta_detalle": falta_detalle_count,
         "porcentaje_valor": (valor_count / total * 100) if total > 0 else 0,
         "porcentaje_desperdicio": (desperdicio_count / total * 100) if total > 0 else 0,
-        "tipos_desperdicio": tipos_desperdicio,
+        "tipos_desperdicio": waste_distribution,
         "recomendaciones_count": len([
             r for r in df_classified["Recomendación"].tolist()
             if r and r != "Sin recomendación"

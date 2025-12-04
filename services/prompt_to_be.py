@@ -20,13 +20,8 @@ def get_prompt_TOBE(contexto_proceso: str = "", classified_data=None):
     
     # Intentar leer classified_data de session_state si no se proporciona
     if classified_data is None:
-        try:
-            import streamlit as st
-            if hasattr(st, 'session_state') and hasattr(st.session_state, 'get'):
-                classified_data = st.session_state.get("classified_data_ca", None)
-        except (ImportError, AttributeError):
-            # Si streamlit no está disponible, continuar sin classified_data
-            pass
+        # En entorno backend, classified_data debe ser proporcionado explícitamente
+        pass
     
     contexto_section = ""
     if contexto_proceso and contexto_proceso.strip():
@@ -42,6 +37,26 @@ Este contexto describe el proceso actual (AS-IS) que estás optimizando. Utiliza
 
 ---
 """
+
+    # Sección de Documentación Complementaria (RAG)
+    rag_section = ""
+    try:
+        from services.rag import get_rag_context
+        rag_content = get_rag_context()
+        if rag_content:
+            rag_section = f"""
+###📚 DOCUMENTACIÓN COMPLEMENTARIA (RAG):
+La siguiente información proviene de documentos y guías cargados en el sistema (PDFs, Excel). 
+Úsala como referencia obligatoria para alinear las propuestas con los estándares y conocimientos de la organización:
+
+{rag_content}
+
+---
+"""
+    except Exception as e:
+        print(f"⚠️ Warning: Could not load RAG context: {e}")
+        rag_section = ""
+
     
     # Sección de datos del Segmentador de Actividades (classified_data)
     segmentador_section = ""
@@ -56,184 +71,170 @@ Este contexto describe el proceso actual (AS-IS) que estás optimizando. Utiliza
                 cols_lower = {col.lower(): col for col in classified_data.columns}
                 
                 def find_col(*names):
-                    for n in names:
-                        key = n.lower()
-                        if key in cols_lower:
-                            return cols_lower[key]
+                    try:
+                        for n in names:
+                            key = n.lower()
+                            if key in cols_lower:
+                                return cols_lower[key]
+                    except:
+                        pass
                     return None
                 
-                col_actividad = find_col('actividad', 'nombre', 'name', 'subactividad')
-                col_tipo = find_col('tipo_actividad', 'tipo', 'classification', 'clasificacion')
-                col_clasificacion = find_col('clasificacion lean', 'clasificacion_lean', 'clasificacion')
-                col_automatizable = find_col('automatizable')
-                col_justificacion = find_col('justificacion', 'justificación')
-                col_desperdicio = find_col('desperdicio', 'tipo desperdicio', 'waste')
-                col_tiempo = find_col('tiempo_promedio_min', 'tiempo_promedio', 'tiempo', 'tiempo_estimado')
-                
-                # Construir resumen de subactividades
-                resumen_subactividades = []
-                
-                # Agrupar por tipo de actividad si existe
-                if col_tipo:
-                    tipos_count = classified_data[col_tipo].value_counts().to_dict()
-                    tipos_info = ", ".join([f"{k}: {v}" for k, v in tipos_count.items()])
-                    resumen_subactividades.append(f"- Tipos de actividad identificados: {tipos_info}")
-                
-                # Contar automatizables
-                if col_automatizable:
-                    automatizables = classified_data[col_automatizable].astype(str).str.lower()
-                    total_automatizables = (automatizables == "sí").sum() + (automatizables == "si").sum()
-                    total_posibles = (automatizables == "posible").sum()
-                    if total_automatizables > 0 or total_posibles > 0:
-                        resumen_subactividades.append(f"- Actividades automatizables: {total_automatizables}, Posibles: {total_posibles}")
-                
-                # Contar por clasificación Lean si existe
-                if col_clasificacion:
-                    clasificaciones = classified_data[col_clasificacion].value_counts().to_dict()
-                    clasif_info = ", ".join([f"{k}: {v}" for k, v in clasificaciones.items()])
-                    resumen_subactividades.append(f"- Clasificaciones Lean: {clasif_info}")
-                
-                # Preparar muestra de subactividades (primeras 10 para no hacer el prompt muy largo)
-                muestra_subactividades = []
-                max_muestra = min(10, total_subactividades)
-                
-                for idx in range(max_muestra):
-                    row = classified_data.iloc[idx]
-                    subact_info = {}
+                # Try to build summary, but fallback if any error occurs
+                try:
+                    print(f"DEBUG: DataFrame columns: {classified_data.columns.tolist()}")
+                    if not classified_data.empty:
+                        print(f"DEBUG: First row sample: {classified_data.iloc[0].to_dict()}")
+
+                    col_actividad = find_col('actividad', 'nombre', 'name', 'subactividad', 'step', 'paso')
+                    col_tipo = find_col('tipo_actividad', 'tipo', 'classification', 'clasificacion')
+                    col_clasificacion = find_col('clasificacion lean', 'clasificacion_lean', 'clasificacion', 'lean')
+                    col_automatizable = find_col('automatizable', 'automation')
+                    col_justificacion = find_col('justificacion', 'justificación', 'reason')
+                    col_desperdicio = find_col('desperdicio', 'tipo desperdicio', 'waste', 'tipo_desperdicio')
+                    col_tiempo = find_col('tiempo estándar', 'Tiempo Estándar', 'tiempo_estandar', 'tiempo_promedio_min', 'tiempo_promedio', 'tiempo', 'tiempo_estimado', 'time', 'duration')
                     
-                    if col_actividad:
-                        subact_info["actividad"] = str(row[col_actividad])[:100]
-                    if col_tipo:
-                        subact_info["tipo"] = str(row[col_tipo])
-                    if col_clasificacion:
-                        subact_info["clasificacion"] = str(row[col_clasificacion])
-                    if col_automatizable:
-                        subact_info["automatizable"] = str(row[col_automatizable])
-                    if col_tiempo:
-                        tiempo_val = row[col_tiempo]
-                        if pd.notna(tiempo_val):
-                            subact_info["tiempo_estimado"] = f"{tiempo_val} min"
-                    if col_justificacion:
-                        just = str(row[col_justificacion])
-                        if just and just != "nan":
-                            subact_info["justificacion"] = just[:150]
+                    # Fallback for time column if not found
+                    if not col_tiempo:
+                        for col in classified_data.columns:
+                            if 'tiempo' in col.lower() or 'time' in col.lower():
+                                col_tiempo = col
+                                break
                     
-                    if subact_info:
-                        muestra_subactividades.append(subact_info)
+                    print(f"DEBUG: Found columns - Time: {col_tiempo}, Activity: {col_actividad}")
+                    
+                    # Construir resumen de subactividades
+                    resumen_subactividades = []
+                    
+                    # Contar automatizables
+                    if col_automatizable and col_automatizable in classified_data.columns:
+                        try:
+                            automatizables = classified_data[col_automatizable].astype(str).str.lower()
+                            total_automatizables = (automatizables == "sí").sum() + (automatizables == "si").sum()
+                            total_posibles = (automatizables == "posible").sum()
+                            if total_automatizables > 0 or total_posibles > 0:
+                                resumen_subactividades.append(f"- Actividades automatizables: {total_automatizables}, Posibles: {total_posibles}")
+                        except:
+                            pass
+                    
+                    # Contar por clasificación Lean
+                    if col_clasificacion and col_clasificacion in classified_data.columns:
+                        try:
+                            clasificaciones = classified_data[col_clasificacion].value_counts().to_dict()
+                            clasif_info = ", ".join([f"{k}: {v}" for k,v in clasificaciones.items()])
+                            resumen_subactividades.append(f"- Clasificaciones Lean: {clasif_info}")
+                        except:
+                            pass
+                except Exception as e:
+                    print(f"Warning: Could not build detailed summary: {e}")
+                    resumen_subactividades = [f"Total actividades: {total_subactividades}"]
                 
-                # Construir la sección del segmentador
+                # Build detailed list of all activities
+                newline = "\n"
+                resumen_text = newline.join(resumen_subactividades) if resumen_subactividades else ""
+                
+                activities_list = []
+                if not classified_data.empty:
+                    for idx, row in classified_data.iterrows():
+                        act_id = row.get('id', idx + 1)
+                        nombre = row.get(col_actividad, 'Sin nombre') if col_actividad else row.get('nombre', 'Sin nombre')
+                        tiempo = row.get(col_tiempo, 0) if col_tiempo else 0
+                        tipo = row.get(col_tipo, 'N/A') if col_tipo else 'N/A'
+                        auto = row.get(col_automatizable, 'N/A') if col_automatizable else 'N/A'
+                        
+                        activities_list.append(f"- ID: {act_id} | Actividad: {nombre} | Tiempo Original: {tiempo} min | Tipo: {tipo} | Automatizable: {auto}")
+                
+                activities_text = "\n".join(activities_list)
+                
                 segmentador_section = f"""
 ### 🔍 DATOS DEL SEGMENTADOR DE ACTIVIDADES:
 
-Se han identificado {total_subactividades} subactividades mediante el Segmentador de Actividades. Esta información es CRÍTICA para tu análisis TO-BE:
+Total de actividades analizadas: **{total_subactividades}**
 
-*Resumen de Subactividades:*
-{chr(10).join(resumen_subactividades) if resumen_subactividades else "- Se identificaron subactividades detalladas del proceso"}
+{resumen_text}
 
-*Muestra de Subactividades Identificadas (primeras {max_muestra} de {total_subactividades}):*
-"""
-                for i, subact in enumerate(muestra_subactividades, 1):
-                    segmentador_section += f"\n{i}. "
-                    if "actividad" in subact:
-                        segmentador_section += f"{subact['actividad']}"
-                    if "tipo" in subact:
-                        segmentador_section += f" (Tipo: {subact['tipo']})"
-                    if "clasificacion" in subact:
-                        segmentador_section += f" [Clasificación: {subact['clasificacion']}]"
-                    if "automatizable" in subact:
-                        segmentador_section += f" - Automatizable: {subact['automatizable']}"
-                    if "tiempo_estimado" in subact:
-                        segmentador_section += f" - Tiempo: {subact['tiempo_estimado']}"
-                    if "justificacion" in subact:
-                        segmentador_section += f"\n   Justificación: {subact['justificacion']}"
-                
-                segmentador_section += f"""
+**LISTADO COMPLETO DE ACTIVIDADES (Usa estos datos EXACTOS para 'tiempo_original_minutos'):**
 
-*INSTRUCCIONES PARA USO DE ESTOS DATOS:*
-- Utiliza estas subactividades como base para identificar actividades específicas a optimizar
-- Considera las clasificaciones Lean y tipos de actividad al rediseñar el proceso
-- Prioriza la automatización de actividades marcadas como automatizables
-- Usa los tiempos estimados para calcular mejoras cuantitativas
-- Si hay {total_subactividades} subactividades, asegúrate de considerar todas en tu análisis TO-BE
+{activities_text}
 
 ---
 """
         except Exception as e:
-            # Si hay error al procesar classified_data, continuar sin esa sección
-            # No romper el prompt por errores en el procesamiento
-            pass
+            print(f"⚠️ Error processing classified_data in prompt: {e}")
+            # Fallback: just include raw info
+            segmentador_section = f"""
+### 🔍 DATOS DEL SEGMENTADOR:
+Se proporcionaron {len(classified_data) if hasattr(classified_data, '__len__') else 'varios'} registros de actividades.
+Úsalos como base para el análisis TO-BE.
+
+---
+"""
     
     return f"""
 {contexto_section}
+{rag_section}
 {segmentador_section}
 
-Eres un *consultor experto en optimización de procesos, análisis de valor y automatización inteligente*, 
-especializado en metodologías *Lean Six Sigma, BPMN, Kaizen, SCAMPER y RPA (Robotic Process Automation)*.
-
-Utiliza los resultados que arroja el proceso de segmentación de actividades que han sido procesados previamente.
+Eres un **consultor experto en optimización de procesos, análisis de valor y automatización inteligente**, 
+especializado en metodologías **Lean Six Sigma, BPMN, Kaizen, SCAMPER y RPA (Robotic Process Automation)**.
 
 Tu ÚNICO objetivo es:
--Analizar el proceso actual (AS-IS) y generar una tabla con todas las actividades del proceso, identificando cuáles de esas actividades se pueden optimizar en un nuevo proceso.
+- Analizar el proceso actual (AS-IS) y generar una propuesta de proceso optimizado (TO-BE) con mejoras concretas.
 
- *INSTRUCCIONES:*
+**INSTRUCCIONES:**
 
-1. Lista TODAS las actividades del proceso que se está analizando en una tabla.
-   - Si se proporcionaron subactividades segmentadas, usa esa información como base
-   - Si no hay subactividades, analiza el proceso desde el contexto proporcionado
-2. Para cada actividad, indica si se puede optimizar en un nuevo proceso.
-   - Considera los tiempos estimados, dependencias y tipo de actividad
-   - Evalúa si la actividad es automatizable según la información proporcionada
-3. Si una actividad se puede optimizar, menciona brevemente cómo se podría optimizar.
+1. Analiza TODAS las actividades del proceso AS-IS
+2. Para cada actividad, determina si se debe:
+   - **Eliminar** (no agrega valor)
+   - **Automatizar** (puede ser automatizada total o parcialmente)
+   - **Optimizar** (mejorar sin eliminar ni automatizar)
+   - **Mantener** (ya es eficiente)
+   - **Combinar** (fusionar con otras actividades)
 
+3. Para cada actividad rediseñada, calcula:
+   - Tiempo mejorado en minutos
+   - Número de personas necesarias
+   - Porcentaje de reducción de tiempo
 
-*ESTIMACIÓN DE TIEMPO MEJORADO (CRÍTICO):*
+**ESTIMACIÓN DE TIEMPO MEJORADO (CRÍTICO):**
 
 Para cada actividad rediseñada, DEBES estimar el tiempo mejorado basándote en:
 
-1. *Tiempo Original (AS-IS)*: Usa el tiempo promedio en minutos por tarea que se proporciona en los datos.
-2. *Número de Personas*: Considera cuántas personas realizan la tarea originalmente.
-3. *Tipo de Optimización*:
-   - *Eliminada*: Tiempo = 0 minutos, personas = 0
-   - *Automatizada*: Reduce tiempo en 60-90% (dependiendo del nivel de automatización)
-   - *Optimizada*: Reduce tiempo en 20-50% (según la optimización aplicada)
-   - *Combinada*: Suma los tiempos de las actividades combinadas y reduce en 10-30% por eficiencia
-   - *Conservada*: Mantiene tiempo similar o mejora marginal (0-10%)
+1. **Tiempo Original (AS-IS)**: 
+   - ⚠️ **IMPORTANTE**: Debes COPIAR EXACTAMENTE el valor de 'Tiempo Original' de la lista de actividades proporcionada arriba.
+   - ⚠️ **NO INVENTES** tiempos originales. Si dice 5.5, pon 5.5. Si dice 0, pon 0.
+   - Este valor es la base para calcular la reducción.
+2. **Tipo de Optimización**:
+   - **Eliminada**: Tiempo = 0 minutos, personas = 0
+   - **Automatizada**: Reduce tiempo en 70-90% (dependiendo del nivel)
+   - **Optimizada**: Reduce tiempo en 20-50%
+   - **Combinada**: Suma tiempos y reduce en 20-40% por eficiencia
+   - **Mantenida**: Mismo tiempo
 
-4. *Cálculo de Personas*:
-   - Si se automatiza: Reduce personas según el nivel de automatización
-   - Si se combina: Suma personas y ajusta según eficiencia
-   - Si se optimiza: Puede mantener o reducir personas según el caso
+3. **Personas**: Estima cuántas personas se necesitan (original vs mejorado)
 
-5. *Tiempo Total del Proceso*: Calcula el tiempo total del proceso TO-BE sumando todas las actividades optimizadas.
+**FORMATO DE RESPUESTA:**
 
-IMPORTANTE: 
-- Realiza rediseño de actividades y propon una mejora en el proceso futuro (TO-BE) usando optimización Lean Six Sigma.
-- SIEMPRE incluye estimaciones de tiempo mejorado para cada actividad rediseñada.
-- Las estimaciones deben ser realistas y justificadas según el tipo de optimización aplicada.
-
-*RESPONDE ÚNICAMENTE EN FORMATO JSON* con esta estructura exacta:
+Devuelve un JSON con esta estructura EXACTA:
 
 {{
   "actividades_optimizadas": [
     {{
-      "actividad": "<nombre de la actividad>",
-      "descripcion": "<descripción>",
-      "clasificacion_original": "VA|NVA-N|NVA-P",
-      "accion": "Eliminada|Optimizada|Automatizada|Conservada|Combinada",
-      "justificacion": "<razón de la acción>",
-      "recomendacion_aplicada": "<recomendación del clasificador aplicada>",
-      "tipo_desperdicio_eliminado": "<código si aplica>",
-      "tiempo_original_minutos": <número - tiempo promedio original en minutos por tarea>,
-      "personas_originales": <número - número de personas que ejecutan la tarea originalmente>,
-      "tiempo_mejorado_minutos": <número - tiempo estimado mejorado en minutos por tarea>,
-      "personas_mejoradas": <número - número de personas estimadas después de la optimización>,
-      "reduccion_tiempo_porcentaje": <número - porcentaje de reducción de tiempo (0-100)>,
-      "justificacion_tiempo": "<explicación breve de cómo se estimó el tiempo mejorado>"
+      "id": 1,
+      "nombre": "<nombre de la actividad>",
+      "descripcion": "<descripción detallada del paso optimizado>",
+      "accion": "Eliminada|Automatizada|Optimizada|Mantenida|Combinada",
+      "justificacion": "<por qué se aplicó esta acción específica>",
+      "tiempo_original_minutos": <número>,
+      "personas_originales": <número>,
+      "tiempo_mejorado_minutos": <número>,
+      "personas_mejoradas": <número>,
+      "reduccion_tiempo_porcentaje": <número>
     }}
   ],
   "sipoc": {{
-    "suppliers": ["<proveedor1>", "<proveedor2>", ...],
-    "inputs": ["<entrada1>", "<entrada2>", ...],
+    "suppliers": ["<proveedor1>", "<proveedor2>"],
+    "inputs": ["<entrada1>", "<entrada2>"],
     "process": [
       {{
         "paso": 1,
@@ -241,28 +242,31 @@ IMPORTANTE:
         "descripcion": "<descripción del paso>"
       }}
     ],
-    "outputs": ["<salida1>", "<salida2>", ...],
-    "customers": ["<cliente1>", "<cliente2>", ...]
+    "outputs": ["<salida1>", "<salida2>"],
+    "customers": ["<cliente1>", "<cliente2>"]
   }},
   "mejoras_cuantitativas": {{
     "actividades_eliminadas": <número>,
+    "actividades_automatizadas": <número>,
     "actividades_optimizadas": <número>,
-    "tiempo_total_original_minutos": <número - suma de todos los tiempos originales>,
-    "tiempo_total_mejorado_minutos": <número - suma de todos los tiempos mejorados>,
-    "reduccion_tiempo_total_porcentaje": <número - porcentaje de reducción del tiempo total del proceso>,
-    "personas_totales_originales": <número - suma de todas las personas originales>,
-    "personas_totales_mejoradas": <número - suma de todas las personas mejoradas>,
-    "reduccion_personas_porcentaje": <número - porcentaje de reducción de personal>,
-    "reduccion_costo_estimada": "<porcentaje o descripción basada en reducción de tiempo y personal>",
-    "mejora_calidad": "<descripción>"
+    "actividades_combinadas": <número>,
+    "tiempo_total_original_minutos": <suma de todos los tiempos originales>,
+    "tiempo_total_mejorado_minutos": <suma de todos los tiempos mejorados>,
+    "reduccion_tiempo_total_porcentaje": <porcentaje de reducción>,
+    "personas_totales_originales": <suma de personas originales>,
+    "personas_totales_mejoradas": <suma de personas mejoradas>,
+    "reduccion_personas_porcentaje": <porcentaje de reducción de personal>,
+    "reduccion_costo_estimada": "<descripción del ahorro estimado>",
+    "mejora_calidad": "<descripción de mejoras en calidad>"
   }}
 }}
 
-*REGLAS IMPORTANTES:*
-- NO incluyas ningún texto adicional, solo el JSON válido
+**REGLAS IMPORTANTES:**
+- NO incluyas texto adicional, SOLO el JSON
 - NO uses bloques de código markdown (```json)
-- Asegúrate de que el JSON sea válido y parseable
-- La tabla debe incluir TODAS las actividades del proceso analizado
-- Sé claro y conciso en las descripciones de optimización
+- El JSON debe ser válido y parseable
+- Incluye TODAS las actividades del proceso
+- Sé realista en las estimaciones de tiempo
+- Justifica cada decisión de optimización
 
 Responde AHORA con el JSON:"""

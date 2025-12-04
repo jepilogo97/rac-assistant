@@ -247,10 +247,16 @@ def build_bpmn_xml_advanced(
 
         # 3️⃣ Añadir tiempos si aplica
         if show_times:
+            time_value = None
             if a.get("time_standard"):
-                compact_label += f"\n⏱ {a['time_standard']:.0f} min"
+                time_value = a["time_standard"]
+                compact_label += f"\n⏱ {time_value:.1f} min"
             elif a.get("time_avg"):
-                compact_label += f"\n⏱ ~{a['time_avg']:.0f} min"
+                time_value = a["time_avg"]
+                compact_label += f"\n⏱ ~{time_value:.1f} min"
+            elif a.get("time"):
+                time_value = a["time"]
+                compact_label += f"\n⏱ {time_value:.1f} min"
 
         a["label"] = compact_label
 

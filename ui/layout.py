@@ -146,7 +146,7 @@ def render_main_layout():
     # Crear pestañas
     tabs = st.tabs([
         "📂 Carga de Datos",
-        "📊 Diagrama de Flujo",
+        "📊 Diagrama de Flujo actual",
         "🎯 A. Desperdicios",
         "🧠 A. Actividades",
         "🚀 Proceso Sugerido",
